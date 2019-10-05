@@ -3,9 +3,8 @@ use crossbeam_channel::TryRecvError;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::ffi::OsString;
 use std::time::{Duration, Instant};
-use subprocess::{Exec, ExitStatus, NullFile, Popen as Child};
-
 use structopt::StructOpt;
+use subprocess::{Exec, ExitStatus, NullFile, Popen as Child};
 
 #[derive(StructOpt, Debug)]
 struct Options {
