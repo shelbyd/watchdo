@@ -5,6 +5,7 @@ authors = ["Shelby Doolittle <shelby@shelbyd.com>"]
 edition = "2018"
 
 [dependencies]
+colored = "1.8"
 crossbeam-channel = "=0.3.8"
 ignore = "0.4.10"
 notify = { git = "https://github.com/notify-rs/notify", rev = "75f8bd9304" }

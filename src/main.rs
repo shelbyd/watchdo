@@ -1,3 +1,4 @@
+use colored::{ColoredString, Colorize};
 use crossbeam_channel::TryRecvError;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::ffi::OsString;
@@ -53,9 +54,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         history.try_finish()?;
 
-        let to_print = history.print(80);
+        let to_print = history.print(80).collect::<Vec<_>>();
         if last_printed.as_ref() != Some(&to_print) {
-            println!("{}", to_print);
+            for p in to_print.iter() {
+                print!("{}", p);
+            }
+            println!("");
+
             last_printed = Some(to_print);
         }
 
@@ -132,24 +137,24 @@ impl TestsHistory {
         Ok(())
     }
 
-    fn print(&self, n: usize) -> String {
+    fn print(&self, n: usize) -> impl Iterator<Item = ColoredString> + '_ {
         let history_chars = self.history.iter().map(|state| match state {
-            TestState::NotRan { .. } => ".",
-            TestState::Running(_) => "?",
+            TestState::NotRan { .. } => ".".normal(),
+            TestState::Running(_) => "?".black().on_yellow(),
             TestState::Completed(exit) => {
                 if exit.success() {
-                    "✓"
+                    "✓".white().on_green()
                 } else {
-                    "x"
+                    "x".white().on_red()
                 }
             }
         });
-        let spaces = std::iter::repeat("_").take(n);
+        let spaces = std::iter::repeat(" ".normal().on_white()).take(n);
         let whole_print = spaces.chain(history_chars);
         match whole_print.size_hint() {
             (min, Some(max)) => {
                 assert_eq!(min, max);
-                whole_print.skip(min - n).take(n).collect()
+                whole_print.skip(min - n).take(n)
             }
             _ => unreachable!(),
         }
