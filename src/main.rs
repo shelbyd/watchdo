@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx.send(event).unwrap();
     })?;
 
-    for result in ignore::Walk::new("./") {
+    for result in ignore::WalkBuilder::new("./").follow_links(true).build() {
         watcher.watch(result?.path(), RecursiveMode::NonRecursive)?;
     }
 
