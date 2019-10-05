@@ -1,16 +1,18 @@
 use crossbeam_channel::TryRecvError;
-use notify::{RecommendedWatcher, RecursiveMode, Result, Watcher};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx, rx) = crossbeam_channel::unbounded();
 
     let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |event| {
         tx.send(event).unwrap();
     })?;
 
-    watcher.watch(".", RecursiveMode::Recursive)?;
+    for result in ignore::Walk::new("./") {
+        watcher.watch(result?.path(), RecursiveMode::NonRecursive)?;
+    }
 
     let mut last_printed = None;
     let mut history = TestsHistory::new(Duration::from_millis(100));
@@ -110,7 +112,7 @@ impl TestsHistory {
         *self.currently_running().unwrap() = TestState::Completed(exit);
     }
 
-    fn try_finish(&mut self) -> Result<()> {
+    fn try_finish(&mut self) -> Result<(), notify::Error> {
         if let Some(p) = &mut self.current_process() {
             if let Some(exit) = p.try_wait()? {
                 self.finished(exit);
