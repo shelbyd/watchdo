@@ -53,7 +53,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         history.try_finish()?;
 
-        let to_print = history.print(80).collect::<Vec<_>>();
+        let width = term_size::dimensions().map(|d| d.0).unwrap_or(80);
+        let to_print = history.print(width).collect::<Vec<_>>();
         if last_printed.as_ref() != Some(&to_print) {
             for p in to_print.iter() {
                 print!("{}", p);
