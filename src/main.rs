@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut last_printed = None;
     let mut history = TestsHistory::new(Duration::from_millis(100));
+    history.new_file_tree();
 
     loop {
         match rx.try_recv() {
