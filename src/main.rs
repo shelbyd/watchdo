@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         match rx.try_recv() {
-            Err(TryRecvError::Empty) => {},
+            Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => Err(crossbeam_channel::RecvError)?,
             Ok(event) => {
                 history.new_file_tree();
@@ -122,25 +122,24 @@ impl TestsHistory {
     }
 
     fn print(&self, n: usize) -> String {
-        let history_chars = self.history.iter()
-            .map(|state| match state {
-                TestState::NotRan { .. } => ".",
-                TestState::Running(_) => "?",
-                TestState::Completed(exit) => {
-                    if exit.success() {
-                        "✓"
-                    } else {
-                        "x"
-                    }
+        let history_chars = self.history.iter().map(|state| match state {
+            TestState::NotRan { .. } => ".",
+            TestState::Running(_) => "?",
+            TestState::Completed(exit) => {
+                if exit.success() {
+                    "✓"
+                } else {
+                    "x"
                 }
-            });
+            }
+        });
         let spaces = std::iter::repeat("_").take(n);
         let whole_print = spaces.chain(history_chars);
         match whole_print.size_hint() {
             (min, Some(max)) => {
                 assert_eq!(min, max);
                 whole_print.skip(min - n).take(n).collect()
-            },
+            }
             _ => unreachable!(),
         }
     }
