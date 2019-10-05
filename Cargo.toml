@@ -8,3 +8,5 @@ edition = "2018"
 crossbeam-channel = "=0.3.8"
 ignore = "0.4.10"
 notify = { git = "https://github.com/notify-rs/notify", rev = "75f8bd9304" }
+structopt = "0.3"
+subprocess = "0.1.11"

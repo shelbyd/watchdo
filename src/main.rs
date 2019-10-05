@@ -1,9 +1,20 @@
 use crossbeam_channel::TryRecvError;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::ffi::OsString;
 use std::time::{Duration, Instant};
+use subprocess::{Exec, ExitStatus, NullFile, Popen as Child};
+
+use structopt::StructOpt;
+
+#[derive(StructOpt, Debug)]
+struct Options {
+    #[structopt(parse(from_os_str))]
+    command: OsString,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let options = Options::from_args();
+
     let (tx, rx) = crossbeam_channel::unbounded();
 
     let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |event| {
@@ -30,12 +41,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let None = &history.current_process() {
             if history.want_to_run() {
                 history.run(
-                    Command::new("cargo")
-                        .args(&["test"])
-                        .stdout(Stdio::null())
-                        .stdin(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()?,
+                    Exec::shell(&options.command)
+                        .stdout(NullFile)
+                        .stdin(NullFile)
+                        .stderr(NullFile)
+                        .popen()?,
                 );
             }
         }
@@ -114,7 +124,7 @@ impl TestsHistory {
 
     fn try_finish(&mut self) -> Result<(), notify::Error> {
         if let Some(p) = &mut self.current_process() {
-            if let Some(exit) = p.try_wait()? {
+            if let Some(exit) = p.poll() {
                 self.finished(exit);
             }
         }
