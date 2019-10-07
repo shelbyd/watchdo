@@ -1,10 +1,11 @@
 use colored::{ColoredString, Colorize};
 use crossbeam_channel::TryRecvError;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use std::error::Error;
 use std::ffi::OsString;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
-use subprocess::{Exec, ExitStatus, NullFile, Popen as Child};
+use subprocess::{Exec, ExitStatus, NullFile, Popen as Child, Redirection};
 
 #[derive(StructOpt, Debug)]
 struct Options {
@@ -12,7 +13,7 @@ struct Options {
     command: OsString,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::from_args();
 
     let (tx, rx) = crossbeam_channel::unbounded();
@@ -45,15 +46,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if history.want_to_run() {
                 history.run(
                     Exec::shell(&options.command)
-                        .stdout(NullFile)
                         .stdin(NullFile)
-                        .stderr(NullFile)
+                        .stdout(Redirection::Pipe)
+                        .stderr(Redirection::Pipe)
                         .popen()?,
                 );
             }
         }
 
-        history.try_finish()?;
+        if let Some(output) = history.try_finish()? {
+            if !output.status.success() {
+                eprintln!("{}", output.err);
+                println!("{}", output.out);
+            }
+        }
 
         let width = term_size::dimensions().map(|d| d.0).unwrap_or(80);
         let to_print = history.print(width).collect::<Vec<_>>();
@@ -126,25 +132,30 @@ impl TestsHistory {
         *self.history.last_mut().unwrap() = TestState::Running(child);
     }
 
-    fn finished(&mut self, exit: ExitStatus) {
-        *self.currently_running().unwrap() = TestState::Completed(exit);
+    fn finished(&mut self, output: CommandOutput) -> &CommandOutput {
+        let running = self.currently_running().unwrap();
+        *running = TestState::Completed(output);
+        match running {
+            TestState::Completed(o) => o,
+            _ => unreachable!(),
+        }
     }
 
-    fn try_finish(&mut self) -> Result<(), notify::Error> {
-        if let Some(p) = &mut self.current_process() {
-            if let Some(exit) = p.poll() {
-                self.finished(exit);
+    fn try_finish(&mut self) -> Result<Option<&CommandOutput>, Box<dyn Error>> {
+        if let Some(p) = self.current_process() {
+            if let Some(output) = CommandOutput::from_process(p) {
+                return Ok(Some(self.finished(output?)));
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     fn print(&self, n: usize) -> impl Iterator<Item = ColoredString> + '_ {
         let history_chars = self.history.iter().map(|state| match state {
             TestState::NotRan { .. } => ".".normal(),
             TestState::Running(_) => "?".black().on_yellow(),
-            TestState::Completed(exit) => {
-                if exit.success() {
+            TestState::Completed(output) => {
+                if output.status.success() {
                     "✓".white().on_green()
                 } else {
                     "x".white().on_red()
@@ -167,7 +178,27 @@ impl TestsHistory {
 enum TestState {
     NotRan { requested_at: Instant },
     Running(Child),
-    Completed(ExitStatus),
+    Completed(CommandOutput),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct CommandOutput {
+    status: ExitStatus,
+    out: String,
+    err: String,
+}
+
+impl CommandOutput {
+    fn from_process(child: &mut Child) -> Option<Result<Self, Box<dyn Error>>> {
+        child.poll().map(|exit| {
+            let output = child.communicate(None)?;
+            Ok(CommandOutput {
+                status: exit,
+                out: output.0.unwrap(),
+                err: output.1.unwrap(),
+            })
+        })
+    }
 }
 
 #[cfg(test)]
