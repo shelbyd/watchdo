@@ -30,12 +30,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     history.new_file_tree();
 
     loop {
-        match rx.try_recv() {
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => Err(crossbeam_channel::RecvError)?,
-            Ok(event) => {
-                history.new_file_tree();
-                let _ = event?;
+        loop {
+            match rx.try_recv() {
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => Err(crossbeam_channel::RecvError)?,
+                Ok(event) => {
+                    history.new_file_tree();
+                    let _ = event?;
+                }
             }
         }
 
