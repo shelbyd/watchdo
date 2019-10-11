@@ -3,12 +3,16 @@ use crossbeam_channel::TryRecvError;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::error::Error;
 use std::ffi::OsString;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
 use subprocess::{Exec, ExitStatus, NullFile, Popen as Child, Redirection};
 
 #[derive(StructOpt, Debug)]
 struct Options {
+    #[structopt(long, parse(from_os_str), default_value = "./")]
+    watch_dir: PathBuf,
+
     #[structopt(parse(from_os_str))]
     command: OsString,
 }
@@ -22,7 +26,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         tx.send(event).unwrap();
     })?;
 
-    for result in ignore::WalkBuilder::new("./").follow_links(true).build() {
+    for result in ignore::WalkBuilder::new(options.watch_dir).follow_links(true).build() {
         watcher.watch(result?.path(), RecursiveMode::NonRecursive)?;
     }
 
