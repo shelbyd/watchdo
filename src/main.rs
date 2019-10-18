@@ -26,7 +26,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         tx.send(event).unwrap();
     })?;
 
-    for result in ignore::WalkBuilder::new(options.watch_dir).follow_links(true).build() {
+    for result in ignore::WalkBuilder::new(options.watch_dir)
+        .follow_links(true)
+        .build()
+    {
         watcher.watch(result?.path(), RecursiveMode::NonRecursive)?;
     }
 
