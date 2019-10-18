@@ -20,10 +20,13 @@ impl<E: Executor> CommandRunner<E> {
     }
 
     pub fn try_finish(&mut self) -> Result<Option<CommandOutput>, Box<dyn Error>> {
-        match self.child.as_mut() {
-            None => Ok(None),
-            Some(c) => c.poll(),
+        if let Some(c) = self.child.as_mut() {
+            if let Some(output) = c.poll()? {
+                self.child = None;
+                return Ok(Some(output));
+            }
         }
+        Ok(None)
     }
 }
 
@@ -81,6 +84,24 @@ mod tests {
         let mut executor = MockExecutor::new();
         let mut runner = CommandRunner::new(executor);
 
+        assert_eq!(runner.try_finish().unwrap(), None);
+    }
+
+    #[test]
+    fn run_try_finish_twice_forgets_child() {
+        let mut child = MockChild::new();
+        child
+            .expect_poll()
+            .times(1)
+            .return_once(|| Ok(Some(CommandOutput::default())));
+
+        let mut executor = MockExecutor::new();
+        executor.expect_start().return_once(move || Ok(child));
+
+        let mut runner = CommandRunner::new(executor);
+
+        runner.run();
+        runner.try_finish();
         assert_eq!(runner.try_finish().unwrap(), None);
     }
 }
