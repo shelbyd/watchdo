@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "strict", deny(warnings))]
+
 use colored::{ColoredString, Colorize};
 use crossbeam_channel::TryRecvError;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
