@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 use structopt::StructOpt;
 use subprocess::{Exec, ExitStatus, NullFile, Popen as Child, Redirection};
 
+mod command_runner;
+mod executor;
+
 #[derive(StructOpt, Debug)]
 struct Options {
     #[structopt(long, parse(from_os_str), default_value = "./")]
@@ -205,15 +208,5 @@ impl CommandOutput {
                 err: output.1.unwrap(),
             })
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn slow_test() {
-        std::thread::sleep(Duration::from_secs(1));
     }
 }
