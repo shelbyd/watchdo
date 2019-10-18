@@ -8,10 +8,12 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
-use subprocess::{Exec, ExitStatus, NullFile, Popen as Child, Redirection};
 
 mod command_runner;
+use self::command_runner::*;
+
 mod executor;
+use self::executor::*;
 
 #[derive(StructOpt, Debug)]
 struct Options {
@@ -38,6 +40,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         watcher.watch(result?.path(), RecursiveMode::NonRecursive)?;
     }
 
+    let mut test_command = CommandRunner::new(SubprocessExecutor::new(&options.command));
+
     let mut last_printed = None;
     let mut history = TestsHistory::new(Duration::from_millis(100));
     history.new_file_tree();
@@ -54,23 +58,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        if let None = &history.current_process() {
-            if history.want_to_run() {
-                history.run(
-                    Exec::shell(&options.command)
-                        .stdin(NullFile)
-                        .stdout(Redirection::Pipe)
-                        .stderr(Redirection::Pipe)
-                        .popen()?,
-                );
-            }
+        if history.want_to_run() {
+            test_command.run()?;
+            history.run();
         }
 
-        if let Some(output) = history.try_finish()? {
-            if !output.status.success() {
+        if let Some(output) = test_command.try_finish()? {
+            if !output.success {
                 eprintln!("{}", output.err);
                 println!("{}", output.out);
             }
+            history.finished(output);
         }
 
         let width = term_size::dimensions().map(|d| d.0).unwrap_or(80);
@@ -117,57 +115,40 @@ impl TestsHistory {
     }
 
     fn want_to_run(&self) -> bool {
-        match self.history.last() {
-            Some(TestState::NotRan { .. }) => true,
+        let currently_running = self
+            .history
+            .iter()
+            .filter(|h| *h == &TestState::Running)
+            .next();
+
+        match (currently_running, self.history.last()) {
+            (None, Some(TestState::NotRan { .. })) => true,
             _ => false,
         }
-    }
-
-    fn current_process(&mut self) -> Option<&mut Child> {
-        self.currently_running().map(|state| match state {
-            TestState::Running(child) => child,
-            _ => unreachable!(),
-        })
     }
 
     fn currently_running(&mut self) -> Option<&mut TestState> {
         self.history
             .iter_mut()
-            .filter(|h| match h {
-                TestState::Running(_) => true,
-                _ => false,
-            })
+            .filter(|h| *h == &TestState::Running)
             .next()
     }
 
-    fn run(&mut self, child: Child) {
-        *self.history.last_mut().unwrap() = TestState::Running(child);
+    fn run(&mut self) {
+        *self.history.last_mut().unwrap() = TestState::Running;
     }
 
-    fn finished(&mut self, output: CommandOutput) -> &CommandOutput {
+    fn finished(&mut self, output: CommandOutput) {
         let running = self.currently_running().unwrap();
         *running = TestState::Completed(output);
-        match running {
-            TestState::Completed(o) => o,
-            _ => unreachable!(),
-        }
-    }
-
-    fn try_finish(&mut self) -> Result<Option<&CommandOutput>, Box<dyn Error>> {
-        if let Some(p) = self.current_process() {
-            if let Some(output) = CommandOutput::from_process(p) {
-                return Ok(Some(self.finished(output?)));
-            }
-        }
-        Ok(None)
     }
 
     fn print(&self, n: usize) -> impl Iterator<Item = ColoredString> + '_ {
         let history_chars = self.history.iter().map(|state| match state {
             TestState::NotRan { .. } => ".".normal(),
-            TestState::Running(_) => "?".black().on_yellow(),
+            TestState::Running => "?".black().on_yellow(),
             TestState::Completed(output) => {
-                if output.status.success() {
+                if output.success {
                     "✓".white().on_green()
                 } else {
                     "x".white().on_red()
@@ -186,29 +167,9 @@ impl TestsHistory {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum TestState {
     NotRan { requested_at: Instant },
-    Running(Child),
+    Running,
     Completed(CommandOutput),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct CommandOutput {
-    status: ExitStatus,
-    out: String,
-    err: String,
-}
-
-impl CommandOutput {
-    fn from_process(child: &mut Child) -> Option<Result<Self, Box<dyn Error>>> {
-        child.poll().map(|exit| {
-            let output = child.communicate(None)?;
-            Ok(CommandOutput {
-                status: exit,
-                out: output.0.unwrap(),
-                err: output.1.unwrap(),
-            })
-        })
-    }
 }
