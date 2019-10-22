@@ -20,6 +20,10 @@ struct Options {
     #[structopt(long, parse(from_os_str), default_value = "./")]
     watch_dir: PathBuf,
 
+    // TODO(shelbyd): Don't default to a command.
+    #[structopt(long, parse(from_os_str), default_value = "tail -f /dev/null")]
+    server: OsString,
+
     #[structopt(parse(from_os_str))]
     command: OsString,
 }
@@ -41,6 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut test_command = CommandRunner::new(SubprocessExecutor::new(&options.command));
+    let mut server_command = CommandRunner::new(SubprocessExecutor::new(&options.server));
 
     let mut last_printed = None;
     let mut history = TestsHistory::new(Duration::from_millis(100));
@@ -71,6 +76,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             history.finished(output);
         }
 
+        if history.want_to_restart_server() {
+            match server_command.is_running()? {
+                true => {
+                    server_command.terminate()?;
+                    history.server_terminated();
+                }
+                false => {
+                    server_command.run()?;
+                    history.server_started();
+                }
+            }
+        }
+
         let width = term_size::dimensions().map(|d| d.0).unwrap_or(80);
         let to_print = history.print(width).collect::<Vec<_>>();
         if last_printed.as_ref() != Some(&to_print) {
@@ -88,6 +106,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 struct TestsHistory {
     history: Vec<TestState>,
+    // History index the server is running at.
+    server_running_at: Option<usize>,
     throttle: Duration,
 }
 
@@ -95,6 +115,7 @@ impl TestsHistory {
     fn new(throttle: Duration) -> TestsHistory {
         TestsHistory {
             history: Vec::new(),
+            server_running_at: None,
             throttle,
         }
     }
@@ -141,6 +162,22 @@ impl TestsHistory {
     fn finished(&mut self, output: CommandOutput) {
         let running = self.currently_running().unwrap();
         *running = TestState::Completed(output);
+    }
+
+    fn want_to_restart_server(&self) -> bool {
+        match (self.history.last(), self.server_running_at.as_ref()) {
+            (_, Some(index)) if *index == (self.history.len() - 1) => false,
+            (Some(TestState::Completed(output)), _) if output.success => true,
+            _ => false,
+        }
+    }
+
+    fn server_terminated(&mut self) {
+        self.server_running_at = None;
+    }
+
+    fn server_started(&mut self) {
+        self.server_running_at = Some(self.history.len() - 1);
     }
 
     fn print(&self, n: usize) -> impl Iterator<Item = ColoredString> + '_ {
