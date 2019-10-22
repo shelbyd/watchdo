@@ -5,6 +5,7 @@ use subprocess::{Exec, NullFile, Redirection};
 #[cfg_attr(test, mockall::automock)]
 pub trait Child {
     fn poll(&mut self) -> Result<Option<CommandOutput>, Box<dyn Error>>;
+    fn terminate(&mut self) -> Result<(), Box<dyn Error>>;
 }
 
 #[cfg_attr(test, mockall::automock(type Child=MockChild;))]
@@ -51,6 +52,10 @@ impl Child for subprocess::Popen {
                 }))
             }
         }
+    }
+
+    fn terminate(&mut self) -> Result<(), Box<dyn Error>> {
+        Ok(subprocess::Popen::terminate(self)?)
     }
 }
 
