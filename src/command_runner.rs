@@ -43,6 +43,7 @@ impl<E: Executor> CommandRunner<E> {
     }
 
     pub fn terminate(&mut self) -> Result<(), Box<dyn Error>> {
+        // TODO(shelbyd): Don't block whole program on terminating.
         self.child.as_mut().map(|c| c.terminate()).unwrap_or(Ok(()))
     }
 }
@@ -53,7 +54,7 @@ mod tests {
 
     #[test]
     fn run_starts_executor() {
-        let mut child = MockChild::new();
+        let child = MockChild::new();
         let mut executor = MockExecutor::new();
         executor
             .expect_start()
@@ -97,8 +98,7 @@ mod tests {
 
     #[test]
     fn try_finish_no_run_is_none() {
-        let mut child = MockChild::new();
-        let mut executor = MockExecutor::new();
+        let executor = MockExecutor::new();
         let mut runner = CommandRunner::new(executor);
 
         assert_eq!(runner.try_finish().unwrap(), None);
@@ -139,8 +139,7 @@ mod tests {
 
     #[test]
     fn nothing_is_not_running() {
-        let mut child = MockChild::new();
-        let mut executor = MockExecutor::new();
+        let executor = MockExecutor::new();
 
         let mut runner = CommandRunner::new(executor);
 
