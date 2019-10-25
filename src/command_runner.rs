@@ -43,7 +43,6 @@ impl<E: Executor> CommandRunner<E> {
     }
 
     pub fn terminate(&mut self) -> Result<(), Box<dyn Error>> {
-        // TODO(shelbyd): Don't block whole program on terminating.
         self.child.as_mut().map(|c| c.terminate()).unwrap_or(Ok(()))
     }
 }
