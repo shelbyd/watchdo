@@ -3,6 +3,7 @@
 use colored::{ColoredString, Colorize};
 use crossbeam_channel::TryRecvError;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -76,6 +77,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             history.finished(output);
         }
 
+        history.server_try_finish(server_command.try_finish()?);
+
         if history.want_to_restart_server() {
             match server_command.is_running()? {
                 true => {
@@ -108,6 +111,7 @@ struct TestsHistory {
     history: Vec<TestState>,
     // History index the server is running at.
     server_running_at: Option<usize>,
+    server_history: HashMap<usize, ServerState>,
     throttle: Duration,
 }
 
@@ -116,6 +120,7 @@ impl TestsHistory {
         TestsHistory {
             history: Vec::new(),
             server_running_at: None,
+            server_history: HashMap::new(),
             throttle,
         }
     }
@@ -172,15 +177,39 @@ impl TestsHistory {
         }
     }
 
+    fn server_try_finish(&mut self, output: Option<CommandOutput>) {
+        match (self.server_running_at, output) {
+            (Some(index), Some(output)) => self.server_history_index(index).finished(output),
+            (None, None) => {} // Not running and not done.
+            (None, Some(_)) => unreachable!(),
+            (Some(_), None) => {} // Running and not done.
+        };
+    }
+
+    fn server_history_index(&mut self, index: usize) -> &mut ServerState {
+        self.server_history
+            .entry(index)
+            .or_insert(ServerState::new())
+    }
+
     fn server_terminated(&mut self) {
-        self.server_running_at = None;
+        let index = self
+            .server_running_at
+            .unwrap_or_else(|| unreachable!());
+        self.server_history_index(index).terminated();
     }
 
     fn server_started(&mut self) {
-        self.server_running_at = Some(self.history.len() - 1);
+        let index = self.history.len() - 1;
+        self.server_running_at = Some(index);
+        self.server_history_index(index).running();
     }
 
     fn print(&self, n: usize) -> impl Iterator<Item = ColoredString> + '_ {
+        self.print_test(n).chain(self.print_server(n))
+    }
+
+    fn print_test(&self, n: usize) -> impl Iterator<Item = ColoredString> + '_ {
         let history_chars = self.history.iter().map(|state| match state {
             TestState::NotRan { .. } => ".".normal(),
             TestState::Running => "?".black().on_yellow(),
@@ -202,11 +231,93 @@ impl TestsHistory {
             _ => unreachable!(),
         }
     }
+
+    fn print_server(&self, n: usize) -> Box<dyn Iterator<Item = ColoredString> + '_> {
+        if let (true, None) = (self.server_history.is_empty(), self.server_running_at) {
+            return Box::new(std::iter::empty());
+        }
+
+        let spaces = std::iter::repeat(" ".normal()).take(n);
+        let chars =
+            (0..self.history.len()).map(move |index| match self.server_history.get(&index) {
+                None => " ".normal(),
+                Some(ServerState {
+                    terminated: false,
+                    state: ServerCommandState::Running,
+                }) => "?".black().on_yellow(),
+                Some(ServerState {
+                    terminated: true,
+                    state: ServerCommandState::Running,
+                }) => "x".black().on_yellow(),
+                Some(ServerState {
+                    terminated: true,
+                    state: ServerCommandState::Completed(output),
+                }) => {
+                    if output.success {
+                        "✓".black().on_white()
+                    } else {
+                        "x".black().on_white()
+                    }
+                }
+                Some(ServerState {
+                    terminated: false,
+                    state: ServerCommandState::Completed(output),
+                }) => {
+                    if output.success {
+                        "✓".white().on_red()
+                    } else {
+                        "x".white().on_red()
+                    }
+                }
+            });
+        let whole_print = spaces.chain(chars);
+        let whole_print = match whole_print.size_hint() {
+            (min, Some(max)) => {
+                assert_eq!(min, max);
+                whole_print.skip(min - n).take(n)
+            }
+            _ => unreachable!(),
+        };
+
+        let newline = std::iter::once("\n".normal());
+        Box::new(newline.chain(whole_print))
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum TestState {
     NotRan { requested_at: Instant },
+    Running,
+    Completed(CommandOutput),
+}
+
+struct ServerState {
+    terminated: bool,
+    state: ServerCommandState,
+}
+
+impl ServerState {
+    fn new() -> Self {
+        ServerState {
+            terminated: false,
+            state: ServerCommandState::Running,
+        }
+    }
+
+    fn running(&mut self) {
+        self.state = ServerCommandState::Running;
+    }
+
+    fn terminated(&mut self) {
+        self.terminated = true;
+    }
+
+    fn finished(&mut self, output: CommandOutput) {
+        self.state = ServerCommandState::Completed(output);
+    }
+}
+
+enum ServerCommandState {
     Running,
     Completed(CommandOutput),
 }
