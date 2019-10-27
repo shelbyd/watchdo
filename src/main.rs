@@ -22,8 +22,8 @@ struct Options {
     watch_dir: PathBuf,
 
     // TODO(shelbyd): Don't default to a command.
-    #[structopt(long, parse(from_os_str), default_value = "tail -f /dev/null")]
-    server: OsString,
+    #[structopt(long, parse(from_os_str))]
+    server: Option<OsString>,
 
     #[structopt(parse(from_os_str))]
     command: OsString,
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut test_command = CommandRunner::new(SubprocessExecutor::new(&options.command));
-    let mut server_command = CommandRunner::new(SubprocessExecutor::new(&options.server));
+    let mut server_command = options.server.map(|s| CommandRunner::new(SubprocessExecutor::new(s)));
 
     let mut last_printed = None;
     let mut history = TestsHistory::new(Duration::from_millis(100));
@@ -77,17 +77,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             history.finished(output);
         }
 
-        history.server_try_finish(server_command.try_finish()?);
+        if let Some(server_command) = server_command.as_mut() {
+            history.server_try_finish(server_command.try_finish()?);
 
-        if history.want_to_restart_server() {
-            match server_command.is_running()? {
-                true => {
-                    server_command.terminate()?;
-                    history.server_terminated();
-                }
-                false => {
-                    server_command.run()?;
-                    history.server_started();
+            if history.want_to_restart_server() {
+                match server_command.is_running()? {
+                    true => {
+                        server_command.terminate()?;
+                        history.server_terminated();
+                    }
+                    false => {
+                        server_command.run()?;
+                        history.server_started();
+                    }
                 }
             }
         }
