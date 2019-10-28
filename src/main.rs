@@ -21,7 +21,6 @@ struct Options {
     #[structopt(long, parse(from_os_str), default_value = "./")]
     watch_dir: PathBuf,
 
-    // TODO(shelbyd): Don't default to a command.
     #[structopt(long, parse(from_os_str))]
     server: Option<OsString>,
 
