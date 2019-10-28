@@ -24,6 +24,9 @@ struct Options {
     #[structopt(long, parse(from_os_str))]
     server: Option<OsString>,
 
+    #[structopt(long, default_value = "✓")]
+    ok_str: String,
+
     #[structopt(parse(from_os_str))]
     command: OsString,
 }
@@ -37,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         tx.send(event).unwrap();
     })?;
 
-    for result in ignore::WalkBuilder::new(options.watch_dir)
+    for result in ignore::WalkBuilder::new(options.watch_dir.clone())
         .follow_links(true)
         .build()
     {
@@ -45,10 +48,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut test_command = CommandRunner::new(SubprocessExecutor::new(&options.command));
-    let mut server_command = options.server.map(|s| CommandRunner::new(SubprocessExecutor::new(s)));
+    let mut server_command = options
+        .server
+        .clone()
+        .map(|s| CommandRunner::new(SubprocessExecutor::new(s)));
 
     let mut last_printed = None;
-    let mut history = TestsHistory::new(Duration::from_millis(100));
+    let mut history = TestsHistory::new(Duration::from_millis(100), &options);
     history.new_file_tree();
 
     loop {
@@ -108,21 +114,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-struct TestsHistory {
+struct TestsHistory<'o> {
     history: Vec<TestState>,
     // History index the server is running at.
     server_running_at: Option<usize>,
     server_history: HashMap<usize, ServerState>,
     throttle: Duration,
+    options: &'o Options,
 }
 
-impl TestsHistory {
-    fn new(throttle: Duration) -> TestsHistory {
+impl TestsHistory<'_> {
+    fn new(throttle: Duration, options: &Options) -> TestsHistory {
         TestsHistory {
             history: Vec::new(),
             server_running_at: None,
             server_history: HashMap::new(),
             throttle,
+            options,
         }
     }
 
@@ -194,9 +202,7 @@ impl TestsHistory {
     }
 
     fn server_terminated(&mut self) {
-        let index = self
-            .server_running_at
-            .unwrap_or_else(|| unreachable!());
+        let index = self.server_running_at.unwrap_or_else(|| unreachable!());
         self.server_history_index(index).terminated();
     }
 
@@ -211,12 +217,12 @@ impl TestsHistory {
     }
 
     fn print_test(&self, n: usize) -> impl Iterator<Item = ColoredString> + '_ {
-        let history_chars = self.history.iter().map(|state| match state {
+        let history_chars = self.history.iter().map(move |state| match state {
             TestState::NotRan { .. } => ".".normal(),
             TestState::Running => "?".black().on_yellow(),
             TestState::Completed(output) => {
                 if output.success {
-                    "✓".white().on_green()
+                    self.options.ok_str.white().on_green()
                 } else {
                     "x".white().on_red()
                 }
@@ -255,7 +261,7 @@ impl TestsHistory {
                     state: ServerCommandState::Completed(output),
                 }) => {
                     if output.success {
-                        "✓".black().on_white()
+                        self.options.ok_str.black().on_white()
                     } else {
                         "x".black().on_white()
                     }
@@ -265,7 +271,7 @@ impl TestsHistory {
                     state: ServerCommandState::Completed(output),
                 }) => {
                     if output.success {
-                        "✓".white().on_red()
+                        self.options.ok_str.white().on_red()
                     } else {
                         "x".white().on_red()
                     }
