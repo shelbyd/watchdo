@@ -83,7 +83,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if let Some(server_command) = server_command.as_mut() {
-            history.server_try_finish(server_command.try_finish()?);
+            let unexpected_output = history.server_try_finish(server_command.try_finish()?);
+
+            if let Some(output) = unexpected_output {
+                eprintln!("{}", output.err);
+                println!("{}", output.out);
+            }
 
             if history.want_to_restart_server() {
                 match server_command.is_running()? {
@@ -186,13 +191,21 @@ impl TestsHistory<'_> {
         }
     }
 
-    fn server_try_finish(&mut self, output: Option<CommandOutput>) {
+    /// Returns Some(_) if the output was unexpected and should be printed.
+    fn server_try_finish(&mut self, output: Option<CommandOutput>) -> Option<&CommandOutput> {
         match (self.server_running_at, output) {
-            (Some(index), Some(output)) => self.server_history_index(index).finished(output),
+            (Some(index), Some(output)) => {
+                let history = self.server_history_index(index);
+                history.finished(output);
+                if !history.was_terminated() {
+                    return Some(history.output().expect("Output should be present"));
+                }
+            }
             (None, None) => {} // Not running and not done.
             (None, Some(_)) => unreachable!(),
             (Some(_), None) => {} // Running and not done.
         };
+        None
     }
 
     fn server_history_index(&mut self, index: usize) -> &mut ServerState {
@@ -319,8 +332,19 @@ impl ServerState {
         self.terminated = true;
     }
 
+    fn was_terminated(&self) -> bool {
+        self.terminated
+    }
+
     fn finished(&mut self, output: CommandOutput) {
         self.state = ServerCommandState::Completed(output);
+    }
+
+    fn output(&self) -> Option<&CommandOutput> {
+        match &self.state {
+            ServerCommandState::Completed(o) => Some(o),
+            ServerCommandState::Running => None,
+        }
     }
 }
 
