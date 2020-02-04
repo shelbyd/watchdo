@@ -1,11 +1,11 @@
 #![cfg_attr(feature = "strict", deny(warnings))]
 
 use colored::{ColoredString, Colorize};
-use crossbeam_channel::TryRecvError;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{watcher, RecursiveMode, Watcher};
 use std::error::Error;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::sync::mpsc::{channel, TryRecvError};
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
 
@@ -36,11 +36,9 @@ struct Options {
 fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::from_args();
 
-    let (tx, rx) = crossbeam_channel::unbounded();
+    let (tx, rx) = channel();
 
-    let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |event| {
-        tx.send(event).unwrap();
-    })?;
+    let mut watcher = watcher(tx, Duration::from_millis(100))?;
 
     for result in ignore::WalkBuilder::new(options.watch_dir.clone())
         .follow_links(true)
@@ -57,11 +55,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         loop {
             match rx.try_recv() {
                 Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => Err(crossbeam_channel::RecvError)?,
-                Ok(event) => {
-                    commands.request_run();
-                    let _ = event?;
-                }
+                Err(e @ TryRecvError::Disconnected) => Err(e)?,
+                Ok(_) => commands.request_run(),
             }
         }
 
