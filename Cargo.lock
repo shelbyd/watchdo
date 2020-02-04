@@ -635,7 +635,7 @@ dependencies = [
 
 [[package]]
 name = "watchdo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "colored 1.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ignore 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
