@@ -134,8 +134,13 @@ impl Commands {
                     print_output(output);
                 }
             }
+        }
 
+        for test in self.tests.iter_mut() {
             test.run_if_needed()?;
+            if !Self::last_success(test) {
+                break;
+            }
         }
 
         if let Some(server_history) = self.server.as_mut() {
@@ -144,17 +149,21 @@ impl Commands {
             }
 
             if server_history.has_outstanding_request() {
-                let previous_test_succeeded = match self.tests.last().and_then(|h| h.last()) {
-                    Some(CommandState::Completed(CommandOutput { success: true, .. })) => true,
-                    _ => false,
-                };
-                if previous_test_succeeded {
+                let all_tests_succeeded = self.tests.iter().all(Self::last_success);
+                if all_tests_succeeded {
                     server_history.restart()?;
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn last_success(h: &CommandHistory<SubprocessExecutor>) -> bool {
+        match h.last() {
+            Some(CommandState::Completed(CommandOutput { success: true, .. })) => true,
+            _ => false,
+        }
     }
 
     fn print(&self, width: usize, ok_str: &str) -> Vec<ColoredString> {
