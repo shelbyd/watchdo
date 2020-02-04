@@ -6,7 +6,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::error::Error;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use structopt::StructOpt;
 
 mod command_history;
@@ -86,6 +86,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 struct Commands {
+    last_request: Option<Instant>,
+    debounce: Duration,
     tests: Vec<CommandHistory<SubprocessExecutor>>,
     server: Option<CommandHistory<SubprocessExecutor>>,
 }
@@ -94,23 +96,31 @@ impl Commands {
     fn new(tests: &[OsString], server: Option<OsString>) -> Self {
         let tests = tests
             .iter()
-            .map(|c| {
-                CommandHistory::new(
-                    CommandRunner::new(SubprocessExecutor::new(c)),
-                    Duration::from_millis(100),
-                )
-            })
+            .map(|c| CommandHistory::new(CommandRunner::new(SubprocessExecutor::new(c))))
             .collect();
-        let server = server.map(|s| {
-            CommandHistory::new(
-                CommandRunner::new(SubprocessExecutor::new(s)),
-                Duration::from_millis(100),
-            )
-        });
-        Commands { tests, server }
+        let server =
+            server.map(|s| CommandHistory::new(CommandRunner::new(SubprocessExecutor::new(s))));
+        Commands {
+            last_request: None,
+            debounce: Duration::from_millis(100),
+            tests,
+            server,
+        }
     }
 
     fn request_run(&mut self) {
+        match self.last_request {
+            None => {
+                self.last_request = Some(Instant::now());
+            }
+            Some(t) => {
+                self.last_request = Some(Instant::now());
+                if t.elapsed() <= self.debounce {
+                    return;
+                }
+            }
+        }
+
         for command in self.commands_mut() {
             command.request_run();
         }
@@ -179,7 +189,7 @@ fn print<'c, E: Executor>(
     ok_str: &'c str,
 ) -> impl Iterator<Item = ColoredString> + 'c {
     let chars = command_history.iter().map(move |state| match state {
-        CommandState::Requested(_) => ".".normal(),
+        CommandState::Requested => ".".normal(),
         CommandState::Running => "?".black().on_yellow(),
         CommandState::Completed(output) => {
             if output.success {

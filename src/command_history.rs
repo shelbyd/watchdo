@@ -1,39 +1,26 @@
 use crate::command_runner::*;
 use crate::executor::*;
 
-use std::time::{Duration, Instant};
-
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct CommandHistory<E: Executor> {
     runner: CommandRunner<E>,
     history: Vec<CommandState>,
-    throttle: Duration,
     // True if the last run was explicitly terminated.
     terminated: bool,
 }
 
 impl<E: Executor> CommandHistory<E> {
-    pub fn new(runner: CommandRunner<E>, throttle: Duration) -> Self {
+    pub fn new(runner: CommandRunner<E>) -> Self {
         Self {
             runner,
-            throttle,
             history: Vec::new(),
             terminated: false,
         }
     }
 
     pub fn request_run(&mut self) {
-        match self.history.last() {
-            Some(CommandState::Requested(at)) => {
-                if at.elapsed() <= self.throttle {
-                    return;
-                }
-            }
-            _ => {}
-        }
-
-        self.history.push(CommandState::Requested(Instant::now()));
+        self.history.push(CommandState::Requested);
     }
 
     pub fn run_if_needed(&mut self) -> Result<()> {
@@ -42,7 +29,7 @@ impl<E: Executor> CommandHistory<E> {
         }
 
         match self.history.last_mut() {
-            Some(s @ CommandState::Requested(_)) => {
+            Some(s @ CommandState::Requested) => {
                 *s = CommandState::Running;
                 self.runner.run()
             }
@@ -86,7 +73,7 @@ impl<E: Executor> CommandHistory<E> {
 
     pub fn has_outstanding_request(&self) -> bool {
         match self.history.last() {
-            Some(CommandState::Requested(_)) => true,
+            Some(CommandState::Requested) => true,
             _ => false,
         }
     }
@@ -117,7 +104,7 @@ impl<E: Executor> CommandHistory<E> {
 
 #[derive(PartialEq, Eq)]
 pub enum CommandState {
-    Requested(Instant),
+    Requested,
     Running,
     Completed(CommandOutput),
     Terminated(CommandOutput),
