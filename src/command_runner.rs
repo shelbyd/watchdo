@@ -48,6 +48,7 @@ impl<E: Executor> CommandRunner<E> {
 }
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use super::*;
 
