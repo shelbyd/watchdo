@@ -65,37 +65,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        if let Some(output) = commands.test.try_finish()? {
-            if !output.success {
-                eprintln!("{}", output.err);
-                println!("{}", output.out);
-            }
-        }
-
-        commands.test.run_if_needed()?;
-
-        if let Some(server_history) = commands.server.as_mut() {
-            if let Some(output) = server_history.try_finish()? {
-                eprintln!("{}", output.err);
-                println!("{}", output.out);
-            }
-
-            if server_history.has_outstanding_request() {
-                let previous_test_succeeded = match commands.test.last() {
-                    Some(CommandState::Completed(CommandOutput { success: true, .. })) => true,
-                    _ => false,
-                };
-                if previous_test_succeeded {
-                    server_history.restart()?;
-                }
-            }
-        }
+        commands.tick(|output| {
+            eprintln!("{}", output.err);
+            println!("{}", output.out);
+        });
 
         let width = term_size::dimensions().map(|d| d.0).unwrap_or(80);
-        let mut to_print = print(&commands.test, width, &options.ok_str).collect::<Vec<_>>();
-        if let Some(server_history) = &commands.server {
-            to_print.extend(print(&server_history, width, &options.ok_str));
-        }
+        let to_print = commands.print(width, &options.ok_str);
         if last_printed.as_ref() != Some(&to_print) {
             for p in to_print.iter() {
                 print!("{}", p);
@@ -106,6 +82,73 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+struct Commands {
+    test: CommandHistory<SubprocessExecutor>,
+    server: Option<CommandHistory<SubprocessExecutor>>,
+}
+
+impl Commands {
+    fn new(test: &OsString, server: Option<OsString>) -> Self {
+        let test = CommandHistory::new(
+            CommandRunner::new(SubprocessExecutor::new(test)),
+            Duration::from_millis(100),
+        );
+        let server = server.map(|s| {
+            CommandHistory::new(
+                CommandRunner::new(SubprocessExecutor::new(s)),
+                Duration::from_millis(100),
+            )
+        });
+        Commands { test, server }
+    }
+
+    fn request_run(&mut self) {
+        self.test.request_run();
+        if let Some(h) = &mut self.server {
+            h.request_run();
+        }
+    }
+
+    fn tick(
+        &mut self,
+        mut print_output: impl FnMut(&CommandOutput) -> (),
+    ) -> Result<(), Box<dyn Error>> {
+        if let Some(output) = self.test.try_finish()? {
+            if !output.success {
+                print_output(output);
+            }
+        }
+
+        self.test.run_if_needed()?;
+
+        if let Some(server_history) = self.server.as_mut() {
+            if let Some(output) = server_history.try_finish()? {
+                print_output(output);
+            }
+
+            if server_history.has_outstanding_request() {
+                let previous_test_succeeded = match self.test.last() {
+                    Some(CommandState::Completed(CommandOutput { success: true, .. })) => true,
+                    _ => false,
+                };
+                if previous_test_succeeded {
+                    server_history.restart()?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn print(&self, width: usize, ok_str: &str) -> Vec<ColoredString> {
+        let mut to_print = print(&self.test, width, &ok_str).collect::<Vec<_>>();
+        if let Some(server_history) = &self.server {
+            to_print.extend(print(&server_history, width, &ok_str));
+        }
+        to_print
     }
 }
 
@@ -140,33 +183,5 @@ fn print<'c, E: Executor>(
             Box::new(whole_print.skip(min - width).take(width))
         }
         _ => unreachable!(),
-    }
-}
-
-struct Commands {
-    test: CommandHistory<SubprocessExecutor>,
-    server: Option<CommandHistory<SubprocessExecutor>>,
-}
-
-impl Commands {
-    fn new(test: &OsString, server: Option<OsString>) -> Self {
-        let test = CommandHistory::new(
-            CommandRunner::new(SubprocessExecutor::new(test)),
-            Duration::from_millis(100),
-        );
-        let server = server.map(|s| {
-            CommandHistory::new(
-                CommandRunner::new(SubprocessExecutor::new(s)),
-                Duration::from_millis(100),
-            )
-        });
-        Commands { test, server }
-    }
-
-    fn request_run(&mut self) {
-        self.test.request_run();
-        if let Some(h) = &mut self.server {
-            h.request_run();
-        }
     }
 }
