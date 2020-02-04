@@ -1,7 +1,11 @@
 [package]
 name = "watchdo"
+description = "Run commands whenever files in a directory change."
 version = "0.1.0"
 authors = ["Shelby Doolittle <shelby@shelbyd.com>"]
+license = "MIT"
+homepage = "https://github.com/shelbyd/watchdo"
+repository = "https://github.com/shelbyd/watchdo"
 edition = "2018"
 
 [dependencies]
