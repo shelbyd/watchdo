@@ -149,15 +149,12 @@ impl Commands {
         }
 
         if let Some(server_history) = self.server.as_mut() {
-            if let Some(output) = server_history.try_finish()? {
-                print_output(output);
-            }
+            let all_tests_succeeded = self.tests.iter().all(Self::last_success);
 
-            if server_history.has_outstanding_request() {
-                let all_tests_succeeded = self.tests.iter().all(Self::last_success);
-                if all_tests_succeeded {
-                    server_history.restart()?;
-                }
+            if server_history.has_outstanding_request() && all_tests_succeeded {
+                server_history.restart()?;
+            } else if let Some(output) = server_history.try_finish()? {
+                print_output(output);
             }
         }
 
