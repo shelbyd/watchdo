@@ -30,7 +30,7 @@ struct Options {
     ok_str: String,
 
     #[structopt(parse(from_os_str))]
-    command: OsString,
+    command: Vec<OsString>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         commands.tick(|output| {
             eprintln!("{}", output.err);
             println!("{}", output.out);
-        });
+        })?;
 
         let width = term_size::dimensions().map(|d| d.0).unwrap_or(80);
         let to_print = commands.print(width, &options.ok_str);
@@ -86,43 +86,57 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 struct Commands {
-    test: CommandHistory<SubprocessExecutor>,
+    tests: Vec<CommandHistory<SubprocessExecutor>>,
     server: Option<CommandHistory<SubprocessExecutor>>,
 }
 
 impl Commands {
-    fn new(test: &OsString, server: Option<OsString>) -> Self {
-        let test = CommandHistory::new(
-            CommandRunner::new(SubprocessExecutor::new(test)),
-            Duration::from_millis(100),
-        );
+    fn new(tests: &[OsString], server: Option<OsString>) -> Self {
+        let tests = tests
+            .iter()
+            .map(|c| {
+                CommandHistory::new(
+                    CommandRunner::new(SubprocessExecutor::new(c)),
+                    Duration::from_millis(100),
+                )
+            })
+            .collect();
         let server = server.map(|s| {
             CommandHistory::new(
                 CommandRunner::new(SubprocessExecutor::new(s)),
                 Duration::from_millis(100),
             )
         });
-        Commands { test, server }
+        Commands { tests, server }
     }
 
     fn request_run(&mut self) {
-        self.test.request_run();
-        if let Some(h) = &mut self.server {
-            h.request_run();
+        for command in self.commands_mut() {
+            command.request_run();
         }
+    }
+
+    fn commands(&self) -> impl Iterator<Item = &CommandHistory<SubprocessExecutor>> {
+        self.tests.iter().chain(self.server.iter())
+    }
+
+    fn commands_mut(&mut self) -> impl Iterator<Item = &mut CommandHistory<SubprocessExecutor>> {
+        self.tests.iter_mut().chain(self.server.iter_mut())
     }
 
     fn tick(
         &mut self,
         mut print_output: impl FnMut(&CommandOutput) -> (),
     ) -> Result<(), Box<dyn Error>> {
-        if let Some(output) = self.test.try_finish()? {
-            if !output.success {
-                print_output(output);
+        for test in self.tests.iter_mut() {
+            if let Some(output) = test.try_finish()? {
+                if !output.success {
+                    print_output(output);
+                }
             }
-        }
 
-        self.test.run_if_needed()?;
+            test.run_if_needed()?;
+        }
 
         if let Some(server_history) = self.server.as_mut() {
             if let Some(output) = server_history.try_finish()? {
@@ -130,7 +144,7 @@ impl Commands {
             }
 
             if server_history.has_outstanding_request() {
-                let previous_test_succeeded = match self.test.last() {
+                let previous_test_succeeded = match self.tests.last().and_then(|h| h.last()) {
                     Some(CommandState::Completed(CommandOutput { success: true, .. })) => true,
                     _ => false,
                 };
@@ -144,11 +158,9 @@ impl Commands {
     }
 
     fn print(&self, width: usize, ok_str: &str) -> Vec<ColoredString> {
-        let mut to_print = print(&self.test, width, &ok_str).collect::<Vec<_>>();
-        if let Some(server_history) = &self.server {
-            to_print.extend(print(&server_history, width, &ok_str));
-        }
-        to_print
+        self.commands()
+            .flat_map(|c| print(c, width, &ok_str))
+            .collect()
     }
 }
 
