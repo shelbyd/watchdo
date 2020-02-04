@@ -29,12 +29,12 @@ impl<E: Executor> CommandHistory<E> {
         }
 
         match self.history.last_mut() {
-            Some(s @ CommandState::Requested) => {
-                *s = CommandState::Running;
-                self.runner.run()
+            Some(CommandState::Requested) => {
+                self.run()?;
             }
-            _ => Ok(()),
+            _ => {}
         }
+        Ok(())
     }
 
     fn is_running(&mut self) -> Result<bool> {
@@ -44,6 +44,12 @@ impl<E: Executor> CommandHistory<E> {
 
         self.try_finish()?;
         Ok(false)
+    }
+
+    fn run(&mut self) -> Result<()> {
+        *self.history.last_mut().unwrap() = CommandState::Running;
+        self.terminated = false;
+        self.runner.run()
     }
 
     pub fn try_finish(&mut self) -> Result<Option<&CommandOutput>> {
@@ -92,7 +98,7 @@ impl<E: Executor> CommandHistory<E> {
             self.terminated = true;
             self.runner.terminate()?;
         } else {
-            self.runner.run()?;
+            self.run()?;
         }
         Ok(())
     }
