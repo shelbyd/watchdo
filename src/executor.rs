@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
+use std::time::Duration;
 use subprocess::{Exec, NullFile, Redirection};
 
 #[cfg_attr(test, mockall::automock)]
@@ -44,12 +45,34 @@ impl Child for subprocess::Popen {
         match subprocess::Popen::poll(self) {
             None => Ok(None),
             Some(exit) => {
-                let output = self.communicate(None)?;
+                let output = self
+                    .communicate_start(None)
+                    .limit_time(Duration::from_millis(100))
+                    .read_string();
+
+                let error = match output {
+                    Ok((Some(out), Some(err))) => {
+                        return Ok(Some(CommandOutput {
+                            success: exit.success(),
+                            out,
+                            err,
+                        }));
+                    }
+                    Ok((None, _)) | Ok((_, None)) => unreachable!(),
+                    Err(e) => e,
+                };
+
+                if error.kind() != std::io::ErrorKind::TimedOut {
+                    return Err(Box::new(error));
+                }
+
+                let output = error.capture;
                 Ok(Some(CommandOutput {
                     success: exit.success(),
-                    out: output.0.unwrap(),
-                    err: output.1.unwrap(),
+                    out: std::string::String::from_utf8(output.0.unwrap())?,
+                    err: std::string::String::from_utf8(output.1.unwrap())?,
                 }))
+
             }
         }
     }
