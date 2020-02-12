@@ -1,7 +1,7 @@
 [package]
 name = "watchdo"
 description = "Run commands whenever files in a directory change."
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Shelby Doolittle <shelby@shelbyd.com>"]
 license = "MIT"
 readme = "README.md"
