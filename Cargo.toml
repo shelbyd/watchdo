@@ -4,6 +4,7 @@ description = "Run commands whenever files in a directory change."
 version = "0.1.1"
 authors = ["Shelby Doolittle <shelby@shelbyd.com>"]
 license = "MIT"
+readme = "README.md"
 homepage = "https://github.com/shelbyd/watchdo"
 repository = "https://github.com/shelbyd/watchdo"
 edition = "2018"
